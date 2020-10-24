@@ -1,7 +1,7 @@
 from gensim.models import Word2Vec
 import numpy as np
 import multiprocessing as mp
-
+import threading as thread
 
 def deepwalk(graph):
     args = DeepWalkSetting()
@@ -27,7 +27,9 @@ class DeepWalk_Original(object):
         else:  # for small graphs, we generate all the paths at once and train the model.
             iterations = 1
         for i in range(iterations):
-            all_paths = self.generate_walks(deep_walk_arguments, graph, workers)
+            all_paths = self.muti_thread_walk(deep_walk_arguments, graph, workers)
+            # print(all_paths)
+            # all_paths=self.single_generate_walks(deep_walk_arguments,graph,workers)
             if i == 0:
                 word2vec = Word2Vec(sentences=all_paths, min_count=0, size=embed_dim, sg=1, hs=1,
                                     workers=workers,
@@ -89,6 +91,59 @@ class DeepWalk_Original(object):
             all_paths += return_dict[key]
         return all_paths
 
+    def rnd_walk_workers(self,deep_walk_arguments,graph, permuted_idx, proc_begin, proc_end, return_dict):
+        walk_length, window_size = (deep_walk_arguments.walk_length, deep_walk_arguments.window_size)
+        all_paths = []
+        np.random.seed(deep_walk_arguments.seed)
+        for _ in range(deep_walk_arguments.number_walks):
+            for start_idx in permuted_idx[proc_begin: proc_end]:
+                path = [start_idx]
+                for _ in range(walk_length):
+                    curr_idx = path[-1]
+                    neigh = []
+                    wgts = []
+                    for key in graph[curr_idx]:
+                        neigh.append(key)
+                        wgts.append(graph[curr_idx][key]['wgt'])
+                    if len(neigh) == 0:
+                        path.append(curr_idx)
+                    else:
+                        wgts = []
+                        for key in graph[curr_idx]:
+                            wgts.append(graph[curr_idx][key]['wgt'])
+                        path.append(np.random.choice(neigh, p=np.asarray(wgts) / float(sum(wgts))))
+                all_paths.append(list(map(str, path)))
+        return_dict[proc_begin] = all_paths
+
+
+    # 多线程的版本
+    def muti_thread_walk(self,deep_walk_arguments, graph, workers):
+
+        manager = mp.Manager()
+        return_dict = manager.dict()
+        jobs = []
+        chunk_size = len(graph) // workers
+        np.random.seed(deep_walk_arguments.seed)
+        permuted_idx = np.random.permutation(len(graph))
+        for i in range(workers):
+            proc_begin = i * chunk_size
+            proc_end = (i + 1) * chunk_size
+            if i == workers - 1:
+                proc_end = len(graph)
+            p = mp.Process(target=self.rnd_walk_workers, args=(deep_walk_arguments,graph, permuted_idx, proc_begin, proc_end, return_dict))
+            jobs.append(p)
+
+        for p in jobs:
+            p.start()
+
+        for proc in jobs:
+            proc.join()
+        all_paths = []
+        key_arr = sorted(return_dict.keys())
+        np.random.shuffle(key_arr)
+        for key in key_arr:
+            all_paths += return_dict[key]
+        return all_paths
 
     def generate_walks(self, deep_walk_arguments, graph, workers):
         def rnd_walk_workers(graph, permuted_idx, proc_begin, proc_end, return_dict):
@@ -128,8 +183,10 @@ class DeepWalk_Original(object):
                 proc_end = len(graph)
             p = mp.Process(target=rnd_walk_workers, args=(graph, permuted_idx, proc_begin, proc_end, return_dict))
             jobs.append(p)
+
         for p in jobs:
             p.start()
+
         for proc in jobs:
             proc.join()
         all_paths = []

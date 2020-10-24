@@ -7,6 +7,8 @@ import sys
 from argparse import ArgumentParser
 from sklearn.preprocessing import normalize
 import time
+import warnings
+warnings.filterwarnings("ignore")
 
 from embed_methods.deepwalk.deepwalk import *
 from embed_methods.node2vec.node2vec import *
