@@ -2,6 +2,7 @@ import numpy as np
 import networkx as nx
 import os
 from scipy.sparse import identity
+from scipy.sparse import csr_matrix
 from scipy.io import mmwrite
 import sys
 from argparse import ArgumentParser
@@ -53,6 +54,41 @@ def refinement(levels, projections, coarse_laplacian, embeddings, lda, power):
             embeddings = filter_ @ (filter_ @ embeddings)
     return embeddings
 
+# 自定义函数来获得约减后的图
+def getReduceGraph(G,G_name):
+    print("G转换成邻接矩阵的形式:")
+    A = np.array(nx.adjacency_matrix(G).todense())
+    print('遍历邻接矩阵，获得邻接矩阵表示')
+    print('创建数据集在dataset-adjacent目录下:')
+    with open('./dataset-adjacent/our_reduce_graph/{}.txt'.format(G_name),'w+') as f:
+        for i in range(len(A)):
+            for j in range(len(A[0])):
+                if A[i][j]!=0:
+                    f.write('{} {} {}\n'.format(i,j,A[i][j]))
+    print('创建约减后的数据集完毕....')
+
+
+# 加载我们的图
+def loadOurGraph(dataName):
+    rows=[]
+    cols=[]
+    datas=[]
+    shape=None
+    with open('./dataset/ours/{}_network.txt'.format(dataName),'r') as f:
+        lines=f.readlines()
+        for line in lines:
+            line=line[:-1]
+            datalist=line.split(' ')
+            datalist[0]=int(eval(datalist[0]))
+            datalist[1]=int(eval(datalist[1]))
+            datalist[2]=eval(datalist[2])
+            rows.append(datalist[0])
+            cols.append(datalist[1])
+            datas.append(datalist[2])
+        shape=max(rows+cols)+1
+    ret_csr_matrix=csr_matrix((datas, (rows, cols)), shape=(shape, shape))
+    return ret_csr_matrix
+
 def main():
     parser = ArgumentParser(description="GraphZoom")
     parser.add_argument("-d", "--dataset", type=str, default="cora", \
@@ -75,7 +111,7 @@ def main():
             help="path of embedding result")
     parser.add_argument("-m", "--embed_method", type=str, default="deepwalk", \
             help="[deepwalk, node2vec, graphsage]")
-    parser.add_argument("-f", "--fusion", default=True, action="store_false", \
+    parser.add_argument("-f", "--fusion", default=False, action="store_false", \
             help="whether use graph fusion")
     parser.add_argument("-p", "--power", default=False, action="store_true", \
             help="Strong power of graph filter, set True to enhance filter power")
@@ -98,8 +134,12 @@ def main():
         coarsen_input_path = "dataset/{}/{}.mtx".format(dataset, dataset)
 
 ######Load Data######
+
     print("%%%%%% Loading Graph Data %%%%%%")
-    laplacian = json2mtx(dataset)
+    print('这里开始注意导入的是我们的数据集')
+    # laplacian = json2mtx(dataset)
+    mydataset='blogcatalog'
+    laplacian = loadOurGraph(mydataset)
 
     ## whether node features are required
     if args.fusion or args.embed_method == "graphsage":
@@ -135,9 +175,14 @@ def main():
 
 ######Embed Reduced Graph######
     print("%%%%%% Starting Graph Embedding %%%%%%")
+    # 保存约减的图
+    getReduceGraph(G,mydataset)
+
     if args.embed_method == "deepwalk":
         embed_start = time.process_time()
+
         embeddings  = deepwalk(G)
+
 
     elif args.embed_method == "node2vec":
         embed_start = time.process_time()

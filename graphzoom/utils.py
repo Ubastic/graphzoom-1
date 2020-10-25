@@ -229,6 +229,7 @@ def sim_coarse(laplacian, level):
         print("Num of nodes: ", laplacian.shape[0], "Num of edges: ", int((laplacian.nnz - laplacian.shape[0])/2))
 
     adjacency = diags(laplacian.diagonal(), 0) - laplacian
+
     G = nx.from_scipy_sparse_matrix(adjacency, edge_attribute='wgt')
     return G, projections, laplacians, level
 
